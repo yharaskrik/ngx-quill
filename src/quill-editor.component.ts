@@ -7,7 +7,7 @@ import {
   Input,
   NgZone,
   OnChanges,
-  Output,
+  Output, PLATFORM_ID,
   Renderer2,
   SimpleChanges,
   ViewEncapsulation
@@ -23,6 +23,7 @@ import { Inject } from '@angular/core';
 import { DOCUMENT } from '@angular/platform-browser';
 
 import * as QuillNamespace from 'quill';
+import {isPlatformBrowser, isPlatformServer} from "@angular/common";
 let Quill: any = QuillNamespace;
 
 export interface CustomOption {
@@ -119,109 +120,117 @@ export class QuillEditorComponent
     private elementRef: ElementRef,
     @Inject(DOCUMENT) private doc: any,
     private renderer: Renderer2,
-    private zone: NgZone
-  ) {}
+    private zone: NgZone,
+    @Inject(PLATFORM_ID) private platformId: Object
+  ) {
+
+  }
 
   ngAfterViewInit() {
-    const toolbarElem = this.elementRef.nativeElement.querySelector(
-      '[quill-editor-toolbar]'
-    );
-    let modules: any = this.modules || this.defaultModules;
-    let placeholder = 'Insert text here ...';
+    if (isPlatformBrowser(this.platformId)) {
+      const toolbarElem = this.elementRef.nativeElement.querySelector(
+        '[quill-editor-toolbar]'
+      );
+      let modules: any = this.modules || this.defaultModules;
+      let placeholder = 'Insert text here ...';
 
-    if (this.placeholder !== null && this.placeholder !== undefined) {
-      placeholder = this.placeholder.trim();
-    }
+      if (this.placeholder !== null && this.placeholder !== undefined) {
+        placeholder = this.placeholder.trim();
+      }
 
-    if (toolbarElem) {
-      modules['toolbar'] = toolbarElem;
-    }
-    this.elementRef.nativeElement.insertAdjacentHTML(
-      'beforeend',
-      '<div quill-editor-element></div>'
-    );
-    this.editorElem = this.elementRef.nativeElement.querySelector(
-      '[quill-editor-element]'
-    );
+      if (toolbarElem) {
+        modules['toolbar'] = toolbarElem;
+      }
+      this.elementRef.nativeElement.insertAdjacentHTML(
+        'beforeend',
+        '<div quill-editor-element></div>'
+      );
+      this.editorElem = this.elementRef.nativeElement.querySelector(
+        '[quill-editor-element]'
+      );
 
-    if (this.style) {
-      Object.keys(this.style).forEach((key: string) => {
-        this.renderer.setStyle(this.editorElem, key, this.style[key]);
+      if (this.style) {
+        Object.keys(this.style).forEach((key: string) => {
+          this.renderer.setStyle(this.editorElem, key, this.style[key]);
+        });
+      }
+
+      this.customOptions.forEach(customOption => {
+        const newCustomOption = Quill.import(customOption.import);
+        newCustomOption.whitelist = customOption.whitelist;
+        Quill.register(newCustomOption, true);
       });
-    }
 
-    this.customOptions.forEach(customOption => {
-      const newCustomOption = Quill.import(customOption.import);
-      newCustomOption.whitelist = customOption.whitelist;
-      Quill.register(newCustomOption, true);
-    });
+      this.quillEditor = new Quill(this.editorElem, {
+        modules: modules,
+        placeholder: placeholder,
+        readOnly: this.readOnly || false,
+        theme: this.theme || 'snow',
+        formats: this.formats,
+        bounds: this.bounds ? (this.bounds === 'self' ? this.editorElem : this.bounds) : this.doc.body,
+        strict: this.strict,
+        scrollingContainer: this.scrollingContainer
+      });
 
-    this.quillEditor = new Quill(this.editorElem, {
-      modules: modules,
-      placeholder: placeholder,
-      readOnly: this.readOnly || false,
-      theme: this.theme || 'snow',
-      formats: this.formats,
-      bounds: this.bounds ? (this.bounds === 'self' ? this.editorElem : this.bounds) : this.doc.body,
-      strict: this.strict,
-      scrollingContainer: this.scrollingContainer
-    });
-
-    if (this.content) {
-      const contents = this.quillEditor.clipboard.convert(this.content);
-      this.quillEditor.setContents(contents);
-      this.quillEditor.history.clear();
-    }
-
-    this.onEditorCreated.emit(this.quillEditor);
-
-    // mark model as touched if editor lost focus
-    this.quillEditor.on(
-      'selection-change',
-      (range: any, oldRange: any, source: string) => {
-        this.zone.run(() => {
-          this.onSelectionChanged.emit({
-            editor: this.quillEditor,
-            range: range,
-            oldRange: oldRange,
-            source: source
-          });
-
-          if (!range) {
-            this.onModelTouched();
-          }
-        });
+      if (this.content) {
+        const contents = this.quillEditor.clipboard.convert(this.content);
+        this.quillEditor.setContents(contents);
+        this.quillEditor.history.clear();
       }
-    );
 
-    // update model if text changes
-    this.quillEditor.on(
-      'text-change',
-      (delta: any, oldDelta: any, source: string) => {
+      this.onEditorCreated.emit(this.quillEditor);
 
-        const text = this.quillEditor.getText();
+      // mark model as touched if editor lost focus
+      this.quillEditor.on(
+        'selection-change',
+        (range: any, oldRange: any, source: string) => {
+          this.zone.run(() => {
+            this.onSelectionChanged.emit({
+              editor: this.quillEditor,
+              range: range,
+              oldRange: oldRange,
+              source: source
+            });
 
-        let html: string | null = this.editorElem.children[0].innerHTML;
-        if (html === '<p><br></p>' || html === '<div><br><div>') {
-          html = null;
+            if (!range) {
+              this.onModelTouched();
+            }
+          });
         }
+      );
 
-        this.zone.run(() => {
-          this.onModelChange(
-            this.valueGetter(this.quillEditor, this.editorElem)
-          );
+      // update model if text changes
+      this.quillEditor.on(
+        'text-change',
+        (delta: any, oldDelta: any, source: string) => {
 
-          this.onContentChanged.emit({
-            editor: this.quillEditor,
-            html: html,
-            text: text,
-            delta: delta,
-            oldDelta: oldDelta,
-            source: source
+          const text = this.quillEditor.getText();
+
+          let html: string | null = this.editorElem.children[0].innerHTML;
+          if (html === '<p><br></p>' || html === '<div><br><div>') {
+            html = null;
+          }
+
+          this.zone.run(() => {
+            this.onModelChange(
+              this.valueGetter(this.quillEditor, this.editorElem)
+            );
+
+            this.onContentChanged.emit({
+              editor: this.quillEditor,
+              html: html,
+              text: text,
+              delta: delta,
+              oldDelta: oldDelta,
+              source: source
+            });
           });
-        });
-      }
-    );
+        }
+      );
+    }
+    if (isPlatformServer(this.platformId)) {
+      return;
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
